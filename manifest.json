@@ -1,0 +1,46 @@
+{
+    "author": "tsk",
+    "background": {
+        "page": "background.html",
+        "persistent": true
+    },
+    "browser_action": {
+        "default_icon": {
+            "40": "logo.png"
+        }
+    },
+    "content_scripts": [
+        {
+            "js": [
+                "lib/jquery-3.1.1.min.js",
+                "polyfills.js",
+                "watchmanCommon.js",
+                "watchmanContent.js"
+            ],
+            "matches": [
+                "http://*/*",
+                "https://*/*"
+            ]
+        }
+    ],
+    "description": "Client monitoring",
+    "icons": {
+        "128": "logo128x128.png"
+    },
+    "manifest_version": 2,
+    "name": "Client monitoring",
+    "permissions": [
+        "identity",
+        "debugger",
+        "tabs",
+        "activeTab",
+        "http://bcvm327/*",
+        "webRequest"
+    ],
+    "short_name": "Watchman",
+    "version": "156",
+    "-ms-preload": {
+        "backgroundScript": "backgroundScriptsAPIBridge.js",
+        "contentScript": "contentScriptsAPIBridge.js"
+    }
+}
