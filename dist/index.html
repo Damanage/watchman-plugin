@@ -1,0 +1,58 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>Client Monitoring</title>
+    <script src="Lib/jquery-3.1.1.min.js"></script>
+    <script src="Lib/bootstrap/bootstrap.bundle.min.js"></script>
+    <script src="Lib/angular.min.js"></script>
+    <script src="common.js"></script>
+    <script src="index.js"></script>
+    <link href="css/bootstrap/bootstrap.min.css" rel="stylesheet" />
+</head>
+<body >
+    
+    
+    <div ng-app="Watchman-angular-app">
+        <div ng-controller="index">
+
+            <ul class="nav nav-tabs">
+                <li class="nav-item">
+                    <a class="nav-link {{tabActive == Tabs.config ? 'active' : ''}}" href="#" ng-click="tabActive = Tabs.config">Конфигурация</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link  {{tabActive == Tabs.events ? 'active' : ''}}" href="#" ng-click="tabActive = Tabs.events">События</a>
+                </li>
+            </ul>
+            <!--config-->
+            <div ng-if="tabActive == Tabs.config">
+                <table class="table table-striped">
+                    <thead><tr><th>Id</th><th>Operation Name</th><th>Start Event type</th><th>Start Event Subtype</th><th>End Event Type</th><th>End Event Subtype</th></tr></thead>
+                    <tbody>
+                        <tr ng-repeat="op in operationsConfig.Operations">
+                            <td>{{op.Id}}</td>
+                            <td>{{op.OperationName}}</td>
+                            <td>{{EventTypeEn[ op.StartEvent.EventType ]}}</td>
+                            <td>{{ getEventSubtype(op.StartEvent) }}</td>
+                            <td>{{EventTypeEn[ op.EndEvent.EventType ]}}</td>
+                            <td>{{ getEventSubtype(op.EndEvent) }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+               
+            </div>
+            <!--события-->
+            <div ng-if="tabActive == Tabs.events">
+                <table class="table table-striped">
+                    <thead><tr><th>#</th><th>Op Name</th><th>Tab Title</th><th>Start Date</th><th>End Date</th><th>Duraction (sec)</th></tr></thead>
+                    <tbody>
+                        <tr ng-repeat="ev in eventList">
+                            <td>{{$index + 1}}</td><td>{{ev.operationName}}</td><td>{{ev.tabTitle}}</td><td>{{ev.param.start_date | date:'dd.MM.yyyy HH:mm:ss:sss'}}</td><td>{{ev.param.end_date | date:'dd.MM.yyyy HH:mm:ss:sss'}}</td> <td>{{ev.param.duration_sec_total}}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
