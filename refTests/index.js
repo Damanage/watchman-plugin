@@ -1,5 +1,4 @@
 //------------ <reference path="lib/angular.min.js" />
-/// <reference path="../app/watchmanContent.ts" />
 angular.module(browserApplicationName, []).controller("index", ["$scope", "$http", function ($scope, $http) {
         var $ctl = $scope;
         $ctl.eventList = [];
@@ -24,7 +23,7 @@ angular.module(browserApplicationName, []).controller("index", ["$scope", "$http
                 $ctl.$apply();
             }
         });
-        let Tabs;
+        var Tabs;
         (function (Tabs) {
             Tabs[Tabs["config"] = 0] = "config";
             Tabs[Tabs["events"] = 1] = "events";

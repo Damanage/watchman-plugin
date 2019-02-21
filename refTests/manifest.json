@@ -2,7 +2,7 @@
   "name": "Client monitoring",
   "description": "Client monitoring",
   "short_name": "Watchman",
-  "version": "1.1",
+  "version": "156",
   "permissions": [
     "identity",
     "debugger",
@@ -22,7 +22,7 @@
     }
   ],
   "background": {
-    "scripts": [ "Lib/jquery-3.1.1.min.js", "polyfills.js", "watchmanCommon.js", "MonitoringBackground2.js" ],
+    "scripts": [ "Lib/jquery-3.1.1.min.js", "polyfills.js", "watchmanCommon.js", "monitoringbackground2.js" ],
     "persistent": true
   },
   "manifest_version": 2,

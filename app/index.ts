@@ -1,4 +1,5 @@
 ﻿//------------ <reference path="lib/angular.min.js" />
+/// <reference path="watchmanContent.ts" />
 angular.module(browserApplicationName, []).controller("index", ["$scope", "$http", function ($scope, $http) {
     var $ctl = $scope;
     $ctl.eventList = [];
