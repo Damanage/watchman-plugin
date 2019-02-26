@@ -2,7 +2,7 @@
   "name": "Client monitoring",
   "description": "Client monitoring",
   "short_name": "Watchman",
-  "version": "156",
+  "version": "2.1",
   "permissions": [
     "identity",
     "debugger",
