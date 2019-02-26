@@ -1,5 +1,6 @@
 ﻿/// <reference path="watchmanContent.ts" />
-
+//Lib
+//import angular from "./Lib/angular.min.js"
 //Variables
 import {browserApplicationName} from "./background classes/variables/common"
 import BrowserEventTypeEn from "./background classes/variables/BrowserEventTypeEn"
@@ -11,6 +12,8 @@ import EventConfiguration from "./background classes/interfaces/EventConfigurati
 import { AjaxRequestResponse, AjaxTestTargetTypeEn } from "./background classes/variables/AjaxRequests"
 //Classes
 import BrowserEvent from "./background classes/BrowserEvent"
+
+
 angular.module(browserApplicationName, []).controller("index", ["$scope", "$http", function ($scope, $http) {
     var $ctl = $scope;
     $ctl.eventList = [];

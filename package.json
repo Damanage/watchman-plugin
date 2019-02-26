@@ -1,0 +1,23 @@
+{
+  "name": "plugin-de-compose",
+  "version": "1.0.0",
+  "description": "plugin for watching user expirience",
+  "private": true,
+  "scripts": {
+    "test": "console.log('test')"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Damanage/watchman-plugin.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Damanage/watchman-plugin/issues"
+  },
+  "homepage": "https://github.com/Damanage/watchman-plugin#readme",
+  "devDependencies": {
+    "webpack": "^4.29.5",
+    "webpack-cli": "^3.2.3"
+  }
+}

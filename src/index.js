@@ -1,6 +1,8 @@
 "use strict";
-/// <reference path="watchmanContent.ts" />
 Object.defineProperty(exports, "__esModule", { value: true });
+/// <reference path="watchmanContent.ts" />
+//Lib
+//import angular from "./Lib/angular.min.js"
 //Variables
 const common_1 = require("./background classes/variables/common");
 const BrowserEventTypeEn_1 = require("./background classes/variables/BrowserEventTypeEn");
