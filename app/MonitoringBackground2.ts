@@ -1,283 +1,35 @@
-﻿//-----<reference path="lib/jquery-3.1.1.intellisense.js" />
-//---- <reference path="lib/signalr-client-1.0.0-alpha2-final.js" />
-/// <reference path="watchmanCommon.ts" />
+﻿
+//Classes
+import TrackOperation  from "./background classes/TrackOperation"
+import OperationConfiguration from "./background classes/OperationConfiguration"
+import BrowserEvent from "./background classes/BrowserEvent"
+import { 
+    ContentScriptMessageSetupDOMListners, 
+    ContentScriptMessageSetupDOMMutationListners,
+    ContentScriptMessageGetSiebelLoginData,
+    ContentScriptMessageEval
+} from "./background classes/ContentScriptMessage"
 
+//Interfaces
+import SiebelLoginDataFilter from "./background classes/interfaces/SiebelLoginDataFilter"
+import SiebelLoginData from "./background classes/interfaces/SiebelLoginData"
+import InternalEvent from "./background classes/interfaces/InternalEvent"
+import EventConfiguration from "./background classes/interfaces/EventConfiguration"
+import Tab2BackgroundMessage from "./background classes/interfaces/Tab2BackgroundMessage"
+import ConfigurationData from "./background classes/interfaces/ConfigurationData"
+
+//Variables
+import  InternalEventTypeEn  from "./background classes/variables/InternalEventTypeEn"
+import { TrackOperationStateEn } from "./background classes/variables/TrackOperationState"
+import { debuggerEvent_requestWillBeSent, debuggerEvent_responseReceived } from "./background classes/variables/DebugerEvent"
+import EventTypeEn from "./background classes/variables/EventTypeEn"
+import { AjaxRequestResponse, AjaxTestTargetTypeEn } from "./background classes/variables/AjaxRequests"
+import BrowserEventTypeEn from "./background classes/variables/BrowserEventTypeEn"
+
+//Workers
+import MetricsToObj from "./background classes/workers/MetricsConverter"
 
 let signalR: any;
-
-
-interface InternalEvent {
-    EventType: InternalEventTypeEn;
-    TabId: number;
-    EventSubType?: string;  // such as "Network.requestWillBeSent"
-    Request?: any;
-    Response?: any;
-    Param?: any;
-    TrackOperation?: TrackOperation
-}
-
-enum TrackOperationStateEn {
-    NotStarted,
-    StartDone,
-    StartCnjDone,
-    EndDone,
-    Finished
-}
-
-interface Metrics {
-    Timestamp: number,
-    AudioHandlers: number,
-    Documents: number,  //Number of documents in the page.
-    Frames: number, //Number of frames in the page.
-    JSEventListeners: number, //Number of events in the page.
-    LayoutObjects: number,
-    MediaKeySessions: number,
-    MediaKeys: number,
-    Nodes: number, // Number of DOM nodes in the page.
-    Resources: number,
-    ScriptPromises: number,
-    PausableObjects: number,
-    V8PerContextDatas: number,
-    WorkerGlobalScopes: number,
-    UACSSResources: number,
-    LayoutCount: number, // Total number of full or partial page layout.
-    RecalcStyleCount: number, //Total number of page style recalculations.
-    LayoutDuration: number, //Combined durations of all page layouts.
-    RecalcStyleDuration: number, //Combined duration of all page style recalculations.
-    ScriptDuration: number, //Combined duration of JavaScript execution.
-    TaskDuration: number, //Combined duration of all tasks performed by the browser.
-    JSHeapUsedSize: number, // Used JavaScript heap size.
-    JSHeapTotalSize: number, //Total JavaScript heap size.
-    FirstMeaningfulPaint: number,
-    DomContentLoaded: number,
-    NavigationStart: number
-}
-
-
-// Convert arr: {metrics: {name:string, value:number} }
-function MetricsToObj(arr: { metrics: { name: string, value: number }[] }): Metrics {
-    let o: any = {};
-    if (!arr) return;
-    for (var it of (arr.metrics || [])) {
-        o[it.name] = Number(it.value);
-    }
-    return o;
-}
-
-// Данные мониторинга операции. Отправляется на сервер as is
-interface MonData extends Metrics {
-    OperationCode: string,      // ид операции из конфигурации
-    Start: Date,                // дата начала операции
-    End: Date,                  // дата завершения операции
-    Duration: number,           // длительность операции в мс
-    LoadSize: number,           // суммарная длина принятых с сервера данных
-    RequestNum: number,         // количество запросов за операцию
-    RequestNumFailed: number,   // количество запросов, завершившихся с ошибкой
-    RequestNumFromCache: number // количество запросов, загруженных из cache
-    ServerTime: number;         // время ожидания запроса
-    Loading: number;
-    Painting: number;
-    Idle: number;
-
-}
-
-const debuggerEvent_requestWillBeSent = "Network.requestWillBeSent";
-const debuggerEvent_responseReceived = "Network.responseReceived";
-
-class TrackOperation {
-    RequestId: string;
-    ResetCounters(): void {
-        this.LoadSize = 0;
-        this.RequestNum = 0;
-        this.RequestNumFailed = 0;
-        this.RequestNumFromCache = 0;
-        this.Requests = [];
-    }
-    PerformanceDataOnStart: Metrics; // состояние performance при запуске операции
-    constructor(public TabId: number) {
-        this.State = TrackOperationStateEn.NotStarted;
-        this.ResetCounters(); // установка счетчиков в ноль
-        let self: TrackOperation = this;
-        // Таблица переходов состояний
-        this.StateTable = [];
-
-        // ... NotStarted yet. Start >>>>>
-        this.StateTable[TrackOperationStateEn.NotStarted] = async (iev: InternalEvent, op: OperationConfiguration): Promise<TrackOperationStateEn> => {
-            if (op.StartEvent && await op.StartEvent.TestMatchInternal(iev, this.RequestId)) {
-                self.OpercationConfig = op;// запомнить Operation
-                self.RequestId = (iev.Param ? iev.Param.requestId : null);
-                if (false) {
-                    // Взять текущий performanceData
-                    chrome.debugger.sendCommand({ tabId: Number(this.TabId) }, "Performance.getMetrics", null, function (ret) {
-                        self.PerformanceDataOnStart = MetricsToObj(ret);
-                    });
-                }
-                self.PerformanceDataOnStart = MetricsToObj(null);
-
-                self.StartedOperationDate = new Date();
-                return TrackOperationStateEn.StartDone;
-            }
-            return self.State;// TrackOperationStateEn.NotStarted;
-        };
-        //... Finished
-        this.StateTable[TrackOperationStateEn.Finished] = this.StateTable[TrackOperationStateEn.NotStarted]; // из Finished -> в StartDone
-        //... StartDone
-        this.StateTable[TrackOperationStateEn.StartDone] = async (iev: InternalEvent, op: OperationConfiguration): Promise<TrackOperationStateEn> => {
-            if (op.StartEvent && op.StartEvent.CnjEndEvent) { // ждем связанное событие
-                if (await op.StartEvent.CnjEndEvent.TestMatchInternal(iev, this.RequestId)) return TrackOperationStateEn.StartCnjDone;
-                return TrackOperationStateEn.StartDone;
-            }
-            if (!op.EndEvent) return TrackOperationStateEn.Finished;
-            if (await op.EndEvent.TestMatchInternal(iev, this.RequestId)) {
-                if (!op.EndEvent.CnjEndEvent) return TrackOperationStateEn.Finished;
-                self.RequestId = (iev.Param ? iev.Param.requestId : null);
-                return TrackOperationStateEn.EndDone;
-            }
-            return self.State;//TrackOperationStateEn.StartDone;
-        };
-        //... StartCnjDone
-        this.StateTable[TrackOperationStateEn.StartCnjDone] = async (iev: InternalEvent, op: OperationConfiguration): Promise<TrackOperationStateEn> => {
-            if (!op.EndEvent) return TrackOperationStateEn.Finished;
-            if (await op.EndEvent.TestMatchInternal(iev, this.RequestId)) {
-                if (!op.EndEvent.CnjEndEvent) return TrackOperationStateEn.Finished;
-                self.RequestId = (iev.Param ? iev.Param.requestId : null);
-                return TrackOperationStateEn.EndDone;
-            }
-            return self.State;//TrackOperationStateEn.StartCnjDone;
-        };
-        // ... EndDone
-        this.StateTable[TrackOperationStateEn.EndDone] = async (iev: InternalEvent, op: OperationConfiguration): Promise<TrackOperationStateEn> => {
-            if (await op.EndEvent.CnjEndEvent.TestMatchInternal(iev, this.RequestId)) return TrackOperationStateEn.Finished;
-            return self.State;//TrackOperationStateEn.EndDone;
-        };
-
-    }
-    State: TrackOperationStateEn = TrackOperationStateEn.NotStarted;
-    OpercationConfig: OperationConfiguration;
-    // Счетчики и данные мониторинга операции
-    StartedOperationDate: Date;
-    LoadSize: number;
-    RequestNum: number;
-    RequestNumFailed: number;
-    RequestNumFromCache: any;
-    Requests: {
-        requestId: string,
-        requestWillBeSentTime: number, // requestWillBeSent ' timestamp
-        requestReceivedTime: number, // requestReceived ' timestamp
-        timing: RequestReceivedTiming, // requestReceived.timing
-        loadingFinishedTime?: number, // loadingFinished'timestamp
-        request: any // request per se. *dbg* remove in production env.
-    }[];
-
-    //---------------------------
-    // Обработчик события
-    //---------------------------
-    async HandleEvent(iev: InternalEvent, op: OperationConfiguration): Promise<TrackOperationStateEn> {
-        let self: TrackOperation = this;
-        //console.log("Probing state table handler for operaction id:" + op.Id, " state:", TrackOperationStateEn[this.State]);
-        let newState = await this.StateTable[this.State](iev, op);
-        //if (newState == TrackOperationStateEn.EndDone) debugger;
-        const responseCodeOK = "200";
-        const responseCodeNotModified = "304";
-        //console.log("event:", iev.EventSubType, iev.Param);//*dbg*
-        // Если событие начато, обрабатываем все события - подсчитываем параметры
-        if (newState != TrackOperationStateEn.NotStarted && this.State != TrackOperationStateEn.NotStarted) {
-            // Таблица тип события - обработчик
-            let internalEvent2Counter: { ie: InternalEvent, handler: (ie: InternalEvent) => void }[] = [
-                //Network.loadingFinished
-                {
-                    ie: { EventType: InternalEventTypeEn.Network, TabId: this.TabId, EventSubType: "Network.loadingFinished" }
-                    , handler: (ie) => { self.LoadSize += Number(ie.Param.encodedDataLength); self.RequestNum++; }
-                }
-                // Network.requestWillBeSent
-                , {
-                    ie: { EventType: InternalEventTypeEn.Network, TabId: this.TabId, EventSubType: debuggerEvent_requestWillBeSent  }
-                    , handler: (ie) => {
-                        self.Requests[ie.Param.requestId] = {
-                            requestId: ie.Param.requestId,
-                            requestWillBeSentTime: ie.Param.timestamp,
-                            timing: null,
-                            requestReceivedTime: null,
-                            request: ie.Request
-                        }; // создаем запрос
-                    }
-                }
-                // Network.responseReceived
-                , {
-                    ie: { EventType: InternalEventTypeEn.Network, TabId: this.TabId, EventSubType: debuggerEvent_responseReceived }
-                    , handler: (ie) => {
-                        self.RequestNumFailed += (ie.Param.response.status == responseCodeOK
-                            || ie.Param.response.status == responseCodeNotModified ? 0 : 1);
-                        self.RequestNumFromCache += (ie.Param.response.fromDiskCache || ie.Param.response.status == responseCodeNotModified ? 1 : 0);
-                        // Timing записать
-                        let req = self.Requests[ie.Param.requestId];
-                        if (!req) {
-                            req = {
-                                requestId: ie.Param.requestId,
-                                requestWillBeSentTime: null,
-                                timing: null,
-                                requestReceivedTime: null,
-                                request: ie.Request
-                            }; 
-                            self.Requests[ie.Param.requestId] = req;
-                        }
-                        req.requestReceivedTime = ie.Param.timestamp; // время получения
-                        req.timing = ie.Param.response.timing; // взять timing
-                    }
-                }
-                // Network.loadingFinished
-                , {
-                    ie: { EventType: InternalEventTypeEn.Network, TabId: this.TabId, EventSubType: "Network.loadingFinished" }
-                    , handler: (ie) => {
-                        let req = self.Requests[ie.Param.requestId];
-                        if (!req) {
-                            req = {
-                                requestId: ie.Param.requestId,
-                                requestWillBeSentTime: null,
-                                timing: null,
-                                requestReceivedTime: null,
-                                request: null
-                            };
-                            self.Requests[ie.Param.requestId] = req;
-                        }
-                        req.loadingFinishedTime = ie.Param.timestamp;
-                    }
-                }
-                // Network.dataReceived
-                , {
-                    ie: { EventType: InternalEventTypeEn.Network, TabId: this.TabId, EventSubType: "Network.dataReceived" }
-                    , handler: (ie) => {
-                        let req = self.Requests[ie.Param.requestId];
-                        if (!req) {
-                            req = {
-                                requestId: ie.Param.requestId,
-                                requestWillBeSentTime: null,
-                                timing: null,
-                                requestReceivedTime: null,
-                                request: null
-                            };
-                            self.Requests[ie.Param.requestId] = req;
-                        }
-                    }
-                }
-            ];
-            for (var it of internalEvent2Counter) {
-                if (it.ie.EventType == iev.EventType && it.ie.EventSubType == iev.EventSubType) it.handler(iev);
-            }
-        }
-
-        if (newState != self.State && this.State == TrackOperationStateEn.NotStarted) {
-            this.ResetCounters();// переход в запуск - сбросить счетчики
-        }
-        if (newState != self.State) {
-            console.log("Switched state for op:", op.Id, " new state:", TrackOperationStateEn[newState]);
-        }
-        this.State = newState; // switch state
-        return newState;
-    };
-    // Таблица переходов состояния: map состояние -> обработчик для состояния
-    StateTable: ( (InternalEvent, OperationConfiguration) => Promise<TrackOperationStateEn>)[];
-}
 //---------------------------
 // Обработчик TAB
 //--------------------------
@@ -600,26 +352,11 @@ class TabHandler {
     }
 }
 
-// Фильтр на SiebelLogin
-interface SiebelLoginDataFilter {
-    filialList?: string[];
-    regionList?: string[];
-    tpList?: string[];
-}
 
 
-// Конфигурация составного события
-class OperationConfiguration {
-    public Id: string;
-    public OperationName: string;               // имя операции
-    public URLPattern: string;                  // regex документа
-    public IsActive: boolean;                   // активна
-    public StartEvent: EventConfiguration;      // описание события начала
-    public EndEvent?: EventConfiguration;       // описание события окончания
-    public EffectiveDateFrom?: Date;            // дата начала мониторинга
-    public EffectiveDateTo?: Date;              // дата окончания мониторинга
-    public SiebelLoginDataFilter: SiebelLoginDataFilter;    // фильтр на SiebelLoginData. Если параметр пропущен, он не проверяется
-}
+
+
+
 
 // Выполнить eval выражения expression в контексте страницы пользователя, обеспечив контекст из context
 async function Eval(iev: InternalEvent, context: any, expression: string): Promise < any > {
@@ -762,7 +499,7 @@ class EventConfigurationAjax implements EventConfiguration {
 //--------------------------------------------------------------
 // Event configuration DOM: конфигурация события "Событие DOM"
 //--------------------------------------------------------------
-class EventConfigurationDOMEvent implements EventConfiguration {
+export class EventConfigurationDOMEvent implements EventConfiguration {
     constructor(public DOMEvent: string, public TargetElementSelector?: string) {
 
     }
@@ -780,7 +517,7 @@ class EventConfigurationDOMEvent implements EventConfiguration {
 //----------------------------------------------------------------------
 // EventCongiguration DOM Mutation: конфигурация события "Изменение DOM"
 //----------------------------------------------------------------------
-class EventConfigurationDOMMutation implements EventConfiguration {
+export class EventConfigurationDOMMutation implements EventConfiguration {
     constructor(public TargetElementSelector: string, public OKExpression?: string) { }
     EventType: EventTypeEn = EventTypeEn.DOMMutation;
     EventConfigurationId = EventConfigurationSerial++;
@@ -1024,7 +761,7 @@ class MonitoringBackground {
                     data.operations.map(
                         function (op: { id: string, version: number, configData: string }): OperationConfiguration {
                             let srvConfigEl: ServerOperationConfiguration = JSON.parse(op.configData);
-                            
+                            console.log(srvConfigEl);
                             function mapEvent(startStop: "start" | "stop"): EventConfiguration {
                                 let ev: EventConfiguration;
                                 switch (srvEventType2InternalEventType[srvConfigEl[startStop + "_type"]]) {

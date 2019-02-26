@@ -1,11 +1,21 @@
-﻿//------------ <reference path="lib/angular.min.js" />
-/// <reference path="watchmanContent.ts" />
+﻿/// <reference path="watchmanContent.ts" />
+
+//Variables
+import {browserApplicationName} from "./background classes/variables/common"
+import BrowserEventTypeEn from "./background classes/variables/BrowserEventTypeEn"
+import EventTypeEn from "./background classes/variables/EventTypeEn"
+import InternalEventTypeEn from "./background classes/variables/InternalEventTypeEn"
+//Interfaces
+import Tab2BackgroundMessage from "./background classes/interfaces/Tab2BackgroundMessage"
+import EventConfiguration from "./background classes/interfaces/EventConfiguration"
+import { AjaxRequestResponse, AjaxTestTargetTypeEn } from "./background classes/variables/AjaxRequests"
+//Classes
+import BrowserEvent from "./background classes/BrowserEvent"
 angular.module(browserApplicationName, []).controller("index", ["$scope", "$http", function ($scope, $http) {
     var $ctl = $scope;
     $ctl.eventList = [];
     $ctl.operationsConfig = { Operations: [] };
     $ctl.EventTypeEn = EventTypeEn;
-
     chrome.runtime.onMessage.addListener(
         function (msg: BrowserEvent, sender: any, sendResponse: (any) => void): void {
             // Произошло событие - перерисовать события

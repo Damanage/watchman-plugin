@@ -1,6 +1,4 @@
-//-----<reference path="lib/jquery-3.1.1.intellisense.js" />
-//---- <reference path="lib/signalr-client-1.0.0-alpha2-final.js" />
-/// <reference path="watchmanCommon.ts" />
+"use strict";
 var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
     return new (P || (P = Promise))(function (resolve, reject) {
         function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
@@ -9,212 +7,21 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
+Object.defineProperty(exports, "__esModule", { value: true });
+//Classes
+const TrackOperation_1 = require("./background classes/TrackOperation");
+const BrowserEvent_1 = require("./background classes/BrowserEvent");
+const ContentScriptMessage_1 = require("./background classes/ContentScriptMessage");
+//Variables
+const InternalEventTypeEn_1 = require("./background classes/variables/InternalEventTypeEn");
+const TrackOperationState_1 = require("./background classes/variables/TrackOperationState");
+const DebugerEvent_1 = require("./background classes/variables/DebugerEvent");
+const EventTypeEn_1 = require("./background classes/variables/EventTypeEn");
+const AjaxRequests_1 = require("./background classes/variables/AjaxRequests");
+const BrowserEventTypeEn_1 = require("./background classes/variables/BrowserEventTypeEn");
+//Workers
+const MetricsConverter_1 = require("./background classes/workers/MetricsConverter");
 let signalR;
-var TrackOperationStateEn;
-(function (TrackOperationStateEn) {
-    TrackOperationStateEn[TrackOperationStateEn["NotStarted"] = 0] = "NotStarted";
-    TrackOperationStateEn[TrackOperationStateEn["StartDone"] = 1] = "StartDone";
-    TrackOperationStateEn[TrackOperationStateEn["StartCnjDone"] = 2] = "StartCnjDone";
-    TrackOperationStateEn[TrackOperationStateEn["EndDone"] = 3] = "EndDone";
-    TrackOperationStateEn[TrackOperationStateEn["Finished"] = 4] = "Finished";
-})(TrackOperationStateEn || (TrackOperationStateEn = {}));
-// Convert arr: {metrics: {name:string, value:number} }
-function MetricsToObj(arr) {
-    let o = {};
-    if (!arr)
-        return;
-    for (var it of (arr.metrics || [])) {
-        o[it.name] = Number(it.value);
-    }
-    return o;
-}
-const debuggerEvent_requestWillBeSent = "Network.requestWillBeSent";
-const debuggerEvent_responseReceived = "Network.responseReceived";
-class TrackOperation {
-    constructor(TabId) {
-        this.TabId = TabId;
-        this.State = TrackOperationStateEn.NotStarted;
-        this.State = TrackOperationStateEn.NotStarted;
-        this.ResetCounters(); // установка счетчиков в ноль
-        let self = this;
-        // Таблица переходов состояний
-        this.StateTable = [];
-        // ... NotStarted yet. Start >>>>>
-        this.StateTable[TrackOperationStateEn.NotStarted] = (iev, op) => __awaiter(this, void 0, void 0, function* () {
-            if (op.StartEvent && (yield op.StartEvent.TestMatchInternal(iev, this.RequestId))) {
-                self.OpercationConfig = op; // запомнить Operation
-                self.RequestId = (iev.Param ? iev.Param.requestId : null);
-                if (false) {
-                    // Взять текущий performanceData
-                    chrome.debugger.sendCommand({ tabId: Number(this.TabId) }, "Performance.getMetrics", null, function (ret) {
-                        self.PerformanceDataOnStart = MetricsToObj(ret);
-                    });
-                }
-                self.PerformanceDataOnStart = MetricsToObj(null);
-                self.StartedOperationDate = new Date();
-                return TrackOperationStateEn.StartDone;
-            }
-            return self.State; // TrackOperationStateEn.NotStarted;
-        });
-        //... Finished
-        this.StateTable[TrackOperationStateEn.Finished] = this.StateTable[TrackOperationStateEn.NotStarted]; // из Finished -> в StartDone
-        //... StartDone
-        this.StateTable[TrackOperationStateEn.StartDone] = (iev, op) => __awaiter(this, void 0, void 0, function* () {
-            if (op.StartEvent && op.StartEvent.CnjEndEvent) { // ждем связанное событие
-                if (yield op.StartEvent.CnjEndEvent.TestMatchInternal(iev, this.RequestId))
-                    return TrackOperationStateEn.StartCnjDone;
-                return TrackOperationStateEn.StartDone;
-            }
-            if (!op.EndEvent)
-                return TrackOperationStateEn.Finished;
-            if (yield op.EndEvent.TestMatchInternal(iev, this.RequestId)) {
-                if (!op.EndEvent.CnjEndEvent)
-                    return TrackOperationStateEn.Finished;
-                self.RequestId = (iev.Param ? iev.Param.requestId : null);
-                return TrackOperationStateEn.EndDone;
-            }
-            return self.State; //TrackOperationStateEn.StartDone;
-        });
-        //... StartCnjDone
-        this.StateTable[TrackOperationStateEn.StartCnjDone] = (iev, op) => __awaiter(this, void 0, void 0, function* () {
-            if (!op.EndEvent)
-                return TrackOperationStateEn.Finished;
-            if (yield op.EndEvent.TestMatchInternal(iev, this.RequestId)) {
-                if (!op.EndEvent.CnjEndEvent)
-                    return TrackOperationStateEn.Finished;
-                self.RequestId = (iev.Param ? iev.Param.requestId : null);
-                return TrackOperationStateEn.EndDone;
-            }
-            return self.State; //TrackOperationStateEn.StartCnjDone;
-        });
-        // ... EndDone
-        this.StateTable[TrackOperationStateEn.EndDone] = (iev, op) => __awaiter(this, void 0, void 0, function* () {
-            if (yield op.EndEvent.CnjEndEvent.TestMatchInternal(iev, this.RequestId))
-                return TrackOperationStateEn.Finished;
-            return self.State; //TrackOperationStateEn.EndDone;
-        });
-    }
-    ResetCounters() {
-        this.LoadSize = 0;
-        this.RequestNum = 0;
-        this.RequestNumFailed = 0;
-        this.RequestNumFromCache = 0;
-        this.Requests = [];
-    }
-    //---------------------------
-    // Обработчик события
-    //---------------------------
-    HandleEvent(iev, op) {
-        return __awaiter(this, void 0, void 0, function* () {
-            let self = this;
-            //console.log("Probing state table handler for operaction id:" + op.Id, " state:", TrackOperationStateEn[this.State]);
-            let newState = yield this.StateTable[this.State](iev, op);
-            //if (newState == TrackOperationStateEn.EndDone) debugger;
-            const responseCodeOK = "200";
-            const responseCodeNotModified = "304";
-            //console.log("event:", iev.EventSubType, iev.Param);//*dbg*
-            // Если событие начато, обрабатываем все события - подсчитываем параметры
-            if (newState != TrackOperationStateEn.NotStarted && this.State != TrackOperationStateEn.NotStarted) {
-                // Таблица тип события - обработчик
-                let internalEvent2Counter = [
-                    //Network.loadingFinished
-                    {
-                        ie: { EventType: InternalEventTypeEn.Network, TabId: this.TabId, EventSubType: "Network.loadingFinished" },
-                        handler: (ie) => { self.LoadSize += Number(ie.Param.encodedDataLength); self.RequestNum++; }
-                    }
-                    // Network.requestWillBeSent
-                    ,
-                    {
-                        ie: { EventType: InternalEventTypeEn.Network, TabId: this.TabId, EventSubType: debuggerEvent_requestWillBeSent },
-                        handler: (ie) => {
-                            self.Requests[ie.Param.requestId] = {
-                                requestId: ie.Param.requestId,
-                                requestWillBeSentTime: ie.Param.timestamp,
-                                timing: null,
-                                requestReceivedTime: null,
-                                request: ie.Request
-                            }; // создаем запрос
-                        }
-                    }
-                    // Network.responseReceived
-                    ,
-                    {
-                        ie: { EventType: InternalEventTypeEn.Network, TabId: this.TabId, EventSubType: debuggerEvent_responseReceived },
-                        handler: (ie) => {
-                            self.RequestNumFailed += (ie.Param.response.status == responseCodeOK
-                                || ie.Param.response.status == responseCodeNotModified ? 0 : 1);
-                            self.RequestNumFromCache += (ie.Param.response.fromDiskCache || ie.Param.response.status == responseCodeNotModified ? 1 : 0);
-                            // Timing записать
-                            let req = self.Requests[ie.Param.requestId];
-                            if (!req) {
-                                req = {
-                                    requestId: ie.Param.requestId,
-                                    requestWillBeSentTime: null,
-                                    timing: null,
-                                    requestReceivedTime: null,
-                                    request: ie.Request
-                                };
-                                self.Requests[ie.Param.requestId] = req;
-                            }
-                            req.requestReceivedTime = ie.Param.timestamp; // время получения
-                            req.timing = ie.Param.response.timing; // взять timing
-                        }
-                    }
-                    // Network.loadingFinished
-                    ,
-                    {
-                        ie: { EventType: InternalEventTypeEn.Network, TabId: this.TabId, EventSubType: "Network.loadingFinished" },
-                        handler: (ie) => {
-                            let req = self.Requests[ie.Param.requestId];
-                            if (!req) {
-                                req = {
-                                    requestId: ie.Param.requestId,
-                                    requestWillBeSentTime: null,
-                                    timing: null,
-                                    requestReceivedTime: null,
-                                    request: null
-                                };
-                                self.Requests[ie.Param.requestId] = req;
-                            }
-                            req.loadingFinishedTime = ie.Param.timestamp;
-                        }
-                    }
-                    // Network.dataReceived
-                    ,
-                    {
-                        ie: { EventType: InternalEventTypeEn.Network, TabId: this.TabId, EventSubType: "Network.dataReceived" },
-                        handler: (ie) => {
-                            let req = self.Requests[ie.Param.requestId];
-                            if (!req) {
-                                req = {
-                                    requestId: ie.Param.requestId,
-                                    requestWillBeSentTime: null,
-                                    timing: null,
-                                    requestReceivedTime: null,
-                                    request: null
-                                };
-                                self.Requests[ie.Param.requestId] = req;
-                            }
-                        }
-                    }
-                ];
-                for (var it of internalEvent2Counter) {
-                    if (it.ie.EventType == iev.EventType && it.ie.EventSubType == iev.EventSubType)
-                        it.handler(iev);
-                }
-            }
-            if (newState != self.State && this.State == TrackOperationStateEn.NotStarted) {
-                this.ResetCounters(); // переход в запуск - сбросить счетчики
-            }
-            if (newState != self.State) {
-                console.log("Switched state for op:", op.Id, " new state:", TrackOperationStateEn[newState]);
-            }
-            this.State = newState; // switch state
-            return newState;
-        });
-    }
-    ;
-}
 //---------------------------
 // Обработчик TAB
 //--------------------------
@@ -230,7 +37,7 @@ class TabHandler {
         this.PluginVersion = chrome.runtime.getManifest().version;
         let self = this;
         this.Parent = _parent;
-        this.TrackOp = new TrackOperation(TabId);
+        this.TrackOp = new TrackOperation_1.default(TabId);
         chrome.debugger.attach({ tabId: this.TabId }, this.debuggerVersion, this.OnAttach.bind(this));
         chrome.debugger.sendCommand({ tabId: Number(this.TabId) }, "Network.enable");
         if (false) {
@@ -246,7 +53,7 @@ class TabHandler {
         chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
             let self = this;
             if (sender.tab && self.TabId == sender.tab.id) {
-                if (request.EventType == InternalEventTypeEn.ClientDOMReady) { // в параметрах пришел SiebelLoginData - взять его оттуда
+                if (request.EventType == InternalEventTypeEn_1.default.ClientDOMReady) { // в параметрах пришел SiebelLoginData - взять его оттуда
                     if (request.Param) {
                         self.Parent.SiebelLoginData = request.Param;
                     }
@@ -254,7 +61,7 @@ class TabHandler {
                 this.EventQueue.push({ EventType: request.EventType, TabId: self.TabId, EventSubType: request.EventSubtype, Param: request.DOMEvent });
                 if (!self.HandleEventQueueEntered)
                     setTimeout(self.HandleEventQueue.bind(self), 1);
-                if (request.EventType == InternalEventTypeEn.ClientDOMReady) { // это самое первое событие - можно повесить и остальные listners
+                if (request.EventType == InternalEventTypeEn_1.default.ClientDOMReady) { // это самое первое событие - можно повесить и остальные listners
                     self.SetupDOMEventListners(); // все обработчики событий создаст content script
                 }
             }
@@ -290,7 +97,7 @@ class TabHandler {
         if (debuggeeId.tabId != this.TabId)
             return;
         //console.log(arguments);
-        this.EventQueue.push({ EventType: InternalEventTypeEn.Network, TabId: this.TabId, EventSubType: message, Request: param.request, Response: param.response, Param: param });
+        this.EventQueue.push({ EventType: InternalEventTypeEn_1.default.Network, TabId: this.TabId, EventSubType: message, Request: param.request, Response: param.response, Param: param });
         if (!this.HandleEventQueueEntered)
             setTimeout(this.HandleEventQueue.bind(this), 1);
     }
@@ -302,7 +109,7 @@ class TabHandler {
         /*chrome.debugger.sendCommand({ tabId: Number(this.TabId) }, "Performance.getMetrics", null, */
         (function (ret) {
             //debugger;
-            let perfData = MetricsToObj(ret);
+            let perfData = MetricsConverter_1.default(ret);
             // Вычесть из perfData данные по состоянию на Start
             for (var i in perfData) {
                 if (self.TrackOp.PerformanceDataOnStart[i]) {
@@ -465,12 +272,12 @@ class TabHandler {
             let self = this;
             // Если мы вошли в событие, то обрабатываем его
             //console.log("InternalEventHandler Operation status:", TrackOperationStateEn[this.TrackOp.State], " Handle event:", iev.EventSubType, "Event param:", iev.Param);
-            if (this.TrackOp.State != TrackOperationStateEn.NotStarted) {
+            if (this.TrackOp.State != TrackOperationState_1.TrackOperationStateEn.NotStarted) {
                 yield this.TrackOp.HandleEvent(iev, this.TrackOp.OpercationConfig);
                 // Если завершился, завершаем событие
-                if (this.TrackOp.State == TrackOperationStateEn.Finished) {
+                if (this.TrackOp.State == TrackOperationState_1.TrackOperationStateEn.Finished) {
                     this.PresentMonData();
-                    this.TrackOp.State = TrackOperationStateEn.NotStarted; // переключили в начальное положение 
+                    this.TrackOp.State = TrackOperationState_1.TrackOperationStateEn.NotStarted; // переключили в начальное положение 
                 }
                 return;
             }
@@ -491,7 +298,7 @@ class TabHandler {
                             || !op.SiebelLoginDataFilter // в операции не указан SiebelLoginFilter
                             || self.isSiebelLoginMatch(self.Parent.SiebelLoginData, op.SiebelLoginDataFilter) // соответствует фильтру
                         )) {
-                        if ((yield this.TrackOp.HandleEvent(iev, op)) != TrackOperationStateEn.NotStarted) // запустилось. Выходим
+                        if ((yield this.TrackOp.HandleEvent(iev, op)) != TrackOperationState_1.TrackOperationStateEn.NotStarted) // запустилось. Выходим
                             break;
                     }
                 }
@@ -504,9 +311,9 @@ class TabHandler {
         let trackedEvents = [];
         let trackedDOMMutatedEvents = [];
         function addTracked(ec) {
-            if (ec && ec.EventType == EventTypeEn.DOMEvent)
+            if (ec && ec.EventType == EventTypeEn_1.default.DOMEvent)
                 trackedEvents.push(ec);
-            else if (ec && ec.EventType == EventTypeEn.DOMMutation)
+            else if (ec && ec.EventType == EventTypeEn_1.default.DOMMutation)
                 trackedDOMMutatedEvents.push(ec);
         }
         for (let i in this.Config.Operations) {
@@ -517,18 +324,15 @@ class TabHandler {
                 addTracked(this.Config.Operations[i].EndEvent);
             }
         }
-        chrome.tabs.sendMessage(this.TabId, new ContentScriptMessageSetupDOMListners(trackedEvents));
-        chrome.tabs.sendMessage(this.TabId, new ContentScriptMessageSetupDOMMutationListners(trackedDOMMutatedEvents));
+        chrome.tabs.sendMessage(this.TabId, new ContentScriptMessage_1.ContentScriptMessageSetupDOMListners(trackedEvents));
+        chrome.tabs.sendMessage(this.TabId, new ContentScriptMessage_1.ContentScriptMessageSetupDOMMutationListners(trackedDOMMutatedEvents));
     }
-}
-// Конфигурация составного события
-class OperationConfiguration {
 }
 // Выполнить eval выражения expression в контексте страницы пользователя, обеспечив контекст из context
 function Eval(iev, context, expression) {
     return __awaiter(this, void 0, void 0, function* () {
         return new Promise(resolve => {
-            chrome.tabs.sendMessage(iev.TabId, new ContentScriptMessageEval(context, expression), (resp) => {
+            chrome.tabs.sendMessage(iev.TabId, new ContentScriptMessage_1.ContentScriptMessageEval(context, expression), (resp) => {
                 resolve(resp);
             });
         });
@@ -541,14 +345,14 @@ let EventConfigurationSerial = 1; // последовательный номер
 class EventConfigurationDocumentNavigation {
     constructor(URLPattern) {
         this.URLPattern = URLPattern;
-        this.EventType = EventTypeEn.DocumentNavigation;
+        this.EventType = EventTypeEn_1.default.DocumentNavigation;
         this.EventConfigurationId = EventConfigurationSerial++;
         this.CnjEndEvent = new EventConfigurationDOMEvent("DOMContentLoaded");
     }
     TestMatchInternal(iev) {
         return __awaiter(this, void 0, void 0, function* () {
-            return iev.EventType == InternalEventTypeEn.Network
-                && iev.EventSubType == debuggerEvent_requestWillBeSent
+            return iev.EventType == InternalEventTypeEn_1.default.Network
+                && iev.EventSubType == DebugerEvent_1.debuggerEvent_requestWillBeSent
                 && iev.Param
                 && iev.Param.type == "Document"
                 && iev.Request
@@ -561,12 +365,12 @@ class EventConfigurationDocumentNavigation {
 //----------------------------------------------------------------------------------------------------------------------
 class EventConfigurationAjaxComplete {
     constructor() {
-        this.EventType = EventTypeEn.AjaxRequestComplete;
+        this.EventType = EventTypeEn_1.default.AjaxRequestComplete;
         this.EventConfigurationId = EventConfigurationSerial++;
     }
     TestMatchInternal(iev, requestId) {
         return __awaiter(this, void 0, void 0, function* () {
-            return (iev.EventType == InternalEventTypeEn.Network && iev.EventSubType == debuggerEvent_responseReceived /*&& requestId == iev.Param.requestId*/);
+            return (iev.EventType == InternalEventTypeEn_1.default.Network && iev.EventSubType == DebugerEvent_1.debuggerEvent_responseReceived /*&& requestId == iev.Param.requestId*/);
         });
     }
 }
@@ -575,14 +379,14 @@ class EventConfigurationAjaxComplete {
 //---------------------------------------------------
 class EventConfigurationAjax {
     constructor() {
-        this.EventType = EventTypeEn.AjaxRequest;
+        this.EventType = EventTypeEn_1.default.AjaxRequest;
         this.EventConfigurationId = EventConfigurationSerial++;
     }
     TestMatchInternal(iev) {
         return __awaiter(this, void 0, void 0, function* () {
-            let rc = iev.EventType == InternalEventTypeEn.Network
-                && ((this.RequestResponse == AjaxRequestResponse.Request && iev.EventSubType == debuggerEvent_requestWillBeSent)
-                    || (this.RequestResponse == AjaxRequestResponse.Response && iev.EventSubType == debuggerEvent_responseReceived))
+            let rc = iev.EventType == InternalEventTypeEn_1.default.Network
+                && ((this.RequestResponse == AjaxRequests_1.AjaxRequestResponse.Request && iev.EventSubType == DebugerEvent_1.debuggerEvent_requestWillBeSent)
+                    || (this.RequestResponse == AjaxRequests_1.AjaxRequestResponse.Response && iev.EventSubType == DebugerEvent_1.debuggerEvent_responseReceived))
                 && iev.Param
                 && iev.Param.type == "XHR";
             iev.Param = iev.Param || {};
@@ -595,12 +399,12 @@ class EventConfigurationAjax {
             if (!rc)
                 return false;
             let testRegExp = new RegExp(this.OKRegexp, "i");
-            let requestOrResponse = iev.Param[this.RequestResponse == AjaxRequestResponse.Request ? "request" : "response"];
+            let requestOrResponse = iev.Param[this.RequestResponse == AjaxRequests_1.AjaxRequestResponse.Request ? "request" : "response"];
             if (!requestOrResponse) {
                 //console.error("AjaxRequest testing match. Request or Response field not initialised");
                 return;
             }
-            if (this.RequestResponse == AjaxRequestResponse.Request) { // headersText не заполнен
+            if (this.RequestResponse == AjaxRequests_1.AjaxRequestResponse.Request) { // headersText не заполнен
                 let kv = [];
                 for (var prp in requestOrResponse.headers)
                     kv.push(prp + ": " + requestOrResponse.headers[prp]);
@@ -608,25 +412,25 @@ class EventConfigurationAjax {
             }
             let self = this;
             // URL
-            if (this.TestTarget == AjaxTestTargetTypeEn.URL) {
+            if (this.TestTarget == AjaxRequests_1.AjaxTestTargetTypeEn.URL) {
                 let rc = testRegExp.test(requestOrResponse.url);
                 //console.log("AjaxRequest testing match. Testing URL. Result:" + rc);
                 return rc;
             }
             // Header
-            if (this.TestTarget == AjaxTestTargetTypeEn.Header) {
+            if (this.TestTarget == AjaxRequests_1.AjaxTestTargetTypeEn.Header) {
                 let rc = testRegExp.test(requestOrResponse.headersText);
                 //console.log("AjaxRequest testing match. Testing header. Result:" + rc);
                 return rc;
             }
             // Body && HeaderBody REQUEST
-            else if (self.RequestResponse == AjaxRequestResponse.Request
-                && [AjaxTestTargetTypeEn.HeaderBody, AjaxTestTargetTypeEn.Body].indexOf(this.TestTarget) >= 0) {
+            else if (self.RequestResponse == AjaxRequests_1.AjaxRequestResponse.Request
+                && [AjaxRequests_1.AjaxTestTargetTypeEn.HeaderBody, AjaxRequests_1.AjaxTestTargetTypeEn.Body].indexOf(this.TestTarget) >= 0) {
                 return new Promise(function (resolve) {
                     chrome.debugger.sendCommand({ tabId: iev.TabId }, "Network.getRequestPostData", { requestId: iev.Param.requestId }, function (data) {
                         return __awaiter(this, void 0, void 0, function* () {
                             let testString = chrome.runtime.lastError ? "" : data.postData; // that's not "POST" if there was an error
-                            if (self.TestTarget == AjaxTestTargetTypeEn.HeaderBody)
+                            if (self.TestTarget == AjaxRequests_1.AjaxTestTargetTypeEn.HeaderBody)
                                 testString = requestOrResponse.headersText + testString; // prepend header
                             let rc = testRegExp.test(testString);
                             //console.log("AjaxRequest testing match. Testing request header+body. Result:" + rc);
@@ -638,13 +442,13 @@ class EventConfigurationAjax {
                 });
             }
             // Body && HeaderBody RESPONSE - getting body in this case
-            else if (self.RequestResponse == AjaxRequestResponse.Response && [AjaxTestTargetTypeEn.HeaderBody, AjaxTestTargetTypeEn.Body].indexOf(this.TestTarget) >= 0) {
+            else if (self.RequestResponse == AjaxRequests_1.AjaxRequestResponse.Response && [AjaxRequests_1.AjaxTestTargetTypeEn.HeaderBody, AjaxRequests_1.AjaxTestTargetTypeEn.Body].indexOf(this.TestTarget) >= 0) {
                 // получить body
                 return new Promise((resolve) => {
                     chrome.debugger.sendCommand({ tabId: iev.TabId }, "Network.getResponseBody", { requestId: iev.Param.requestId }, function (resp) {
                         return __awaiter(this, void 0, void 0, function* () {
                             let testString = resp.body;
-                            if (self.TestTarget == AjaxTestTargetTypeEn.HeaderBody)
+                            if (self.TestTarget == AjaxRequests_1.AjaxTestTargetTypeEn.HeaderBody)
                                 testString = iev.Param.response.headersText + testString; // prepend header
                             let rc = testRegExp.test(testString);
                             //console.log("AjaxRequest testing match. Testing response header+body. Result:" + rc);
@@ -666,18 +470,19 @@ class EventConfigurationDOMEvent {
     constructor(DOMEvent, TargetElementSelector) {
         this.DOMEvent = DOMEvent;
         this.TargetElementSelector = TargetElementSelector;
-        this.EventType = EventTypeEn.DOMEvent;
+        this.EventType = EventTypeEn_1.default.DOMEvent;
         this.EventConfigurationId = EventConfigurationSerial++;
     }
     TestMatchInternal(iev) {
         return __awaiter(this, void 0, void 0, function* () {
-            if (iev.EventType == InternalEventTypeEn.ClientDOMReady && this.DOMEvent == "DOMContentLoaded")
+            if (iev.EventType == InternalEventTypeEn_1.default.ClientDOMReady && this.DOMEvent == "DOMContentLoaded")
                 return true; // это специальный случай 
-            return iev.EventType == InternalEventTypeEn.DOMEvent
+            return iev.EventType == InternalEventTypeEn_1.default.DOMEvent
                 && iev.EventSubType == this.DOMEvent && iev.Param.EventConfigurationId == this.EventConfigurationId;
         });
     }
 }
+exports.EventConfigurationDOMEvent = EventConfigurationDOMEvent;
 //----------------------------------------------------------------------
 // EventCongiguration DOM Mutation: конфигурация события "Изменение DOM"
 //----------------------------------------------------------------------
@@ -685,15 +490,16 @@ class EventConfigurationDOMMutation {
     constructor(TargetElementSelector, OKExpression) {
         this.TargetElementSelector = TargetElementSelector;
         this.OKExpression = OKExpression;
-        this.EventType = EventTypeEn.DOMMutation;
+        this.EventType = EventTypeEn_1.default.DOMMutation;
         this.EventConfigurationId = EventConfigurationSerial++;
     }
     TestMatchInternal(iev) {
         return __awaiter(this, void 0, void 0, function* () {
-            return iev.EventType == InternalEventTypeEn.DOMMutation;
+            return iev.EventType == InternalEventTypeEn_1.default.DOMMutation;
         });
     }
 }
+exports.EventConfigurationDOMMutation = EventConfigurationDOMMutation;
 class MonitoringBackground {
     constructor(monitoringAgentServerUrl) {
         this.attachedToTabIds = [];
@@ -719,8 +525,8 @@ class MonitoringBackground {
                     URLPattern: "http://localhost:8080/.*",
                     StartEvent: (() => {
                         var v = new EventConfigurationAjax();
-                        v.RequestResponse = AjaxRequestResponse.Request;
-                        v.TestTarget = AjaxTestTargetTypeEn.URL;
+                        v.RequestResponse = AjaxRequests_1.AjaxRequestResponse.Request;
+                        v.TestTarget = AjaxRequests_1.AjaxTestTargetTypeEn.URL;
                         v.OKRegexp = "http://localhost:8080/MessageHub/PendingActivities";
                         //v.StartCondition = new AjaxEventCondition();
                         //v.StartCondition.TargetType = AjaxRequestTargetTypeEn.Header;
@@ -754,9 +560,9 @@ class MonitoringBackground {
                     URLPattern: "http://localhost:8080/.*",
                     StartEvent: (() => {
                         var v = new EventConfigurationAjax();
-                        v.TestTarget = AjaxTestTargetTypeEn.URL;
+                        v.TestTarget = AjaxRequests_1.AjaxTestTargetTypeEn.URL;
                         v.OKRegexp = "PendingActivities";
-                        v.RequestResponse = AjaxRequestResponse.Request;
+                        v.RequestResponse = AjaxRequests_1.AjaxRequestResponse.Request;
                         return v;
                     })(),
                     IsActive: true,
@@ -818,38 +624,39 @@ class MonitoringBackground {
                 return;
             // map с типа события start/stop сервера на наш enum
             let srvEventType2InternalEventType = {};
-            srvEventType2InternalEventType["ajax"] = EventTypeEn.AjaxRequest;
-            srvEventType2InternalEventType["dom-mutation"] = EventTypeEn.DOMMutation;
-            srvEventType2InternalEventType["doc"] = EventTypeEn.DocumentNavigation;
-            srvEventType2InternalEventType["event"] = EventTypeEn.DOMEvent;
+            srvEventType2InternalEventType["ajax"] = EventTypeEn_1.default.AjaxRequest;
+            srvEventType2InternalEventType["dom-mutation"] = EventTypeEn_1.default.DOMMutation;
+            srvEventType2InternalEventType["doc"] = EventTypeEn_1.default.DocumentNavigation;
+            srvEventType2InternalEventType["event"] = EventTypeEn_1.default.DOMEvent;
             if (data.operations) {
                 self.OperationsConfig.Operations =
                     data.operations.map(function (op) {
                         let srvConfigEl = JSON.parse(op.configData);
+                        console.log(srvConfigEl);
                         function mapEvent(startStop) {
                             let ev;
                             switch (srvEventType2InternalEventType[srvConfigEl[startStop + "_type"]]) {
-                                case EventTypeEn.AjaxRequest:
+                                case EventTypeEn_1.default.AjaxRequest:
                                     let evAjax = new EventConfigurationAjax();
-                                    evAjax.RequestResponse = srvConfigEl[startStop + "_subtype"] == AjaxRequestResponse.Request
-                                        ? AjaxRequestResponse.Request : AjaxRequestResponse.Response;
+                                    evAjax.RequestResponse = srvConfigEl[startStop + "_subtype"] == AjaxRequests_1.AjaxRequestResponse.Request
+                                        ? AjaxRequests_1.AjaxRequestResponse.Request : AjaxRequests_1.AjaxRequestResponse.Response;
                                     evAjax.TestTarget = Number(srvConfigEl[startStop + "_monitor"]);
                                     evAjax.OKRegexp = srvConfigEl[startStop + "_regexp"];
                                     evAjax.CustomExpression = srvConfigEl[startStop + "_cond"];
                                     ev = evAjax;
                                     // Если мы смотрим на Request, то добавить связанное событие, чтобы дождаться ответа
-                                    if (evAjax.RequestResponse == AjaxRequestResponse.Request) {
+                                    if (evAjax.RequestResponse == AjaxRequests_1.AjaxRequestResponse.Request) {
                                         //evAjax.CnjEndEvent = new EventConfigurationAjaxComplete();
                                     }
                                     break;
-                                case EventTypeEn.DOMMutation:
+                                case EventTypeEn_1.default.DOMMutation:
                                     let evDOMMutation = new EventConfigurationDOMMutation(srvConfigEl[startStop + "_regexp"], srvConfigEl[startStop + "_cond"]);
                                     ev = evDOMMutation;
                                     break;
-                                case EventTypeEn.DocumentNavigation:
+                                case EventTypeEn_1.default.DocumentNavigation:
                                     ev = new EventConfigurationDocumentNavigation(srvConfigEl[startStop + "_monitor"]);
                                     break;
-                                case EventTypeEn.DOMEvent:
+                                case EventTypeEn_1.default.DOMEvent:
                                     let evDOMEv = new EventConfigurationDOMEvent(srvConfigEl[startStop + "_subtype"], srvConfigEl[startStop + "_regexp"]);
                                     evDOMEv.OKExpression = srvConfigEl[startStop + "_cond"];
                                     ev = evDOMEv;
@@ -922,14 +729,14 @@ class MonitoringBackground {
         });
         // отправить конфигурацию в browser tab
         function sendConfigToBrowser() {
-            chrome.runtime.sendMessage({ eventType: BrowserEventTypeEn.ConfigLoaded, eventParam: self.OperationsConfig });
+            chrome.runtime.sendMessage({ eventType: BrowserEventTypeEn_1.default.ConfigLoaded, eventParam: self.OperationsConfig });
         }
         //-----------------------------
         // Сообщение от content script
         //-----------------------------
         chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
             //------- Сообщение от content script: данные о siebel login 
-            if (request.EventType == InternalEventTypeEn.SiebelLoginData) {
+            if (request.EventType == InternalEventTypeEn_1.default.SiebelLoginData) {
                 console.log("SiebelLoginData:", request.Param);
                 if (request.Param && !self.SiebelLoginData)
                     self.SiebelLoginData = request.Param; // если данные получены, а у нас они - наоборот - не сохранены
@@ -939,7 +746,7 @@ class MonitoringBackground {
                 }, ajaxParam));
             }
             //----- Browser запрашивает накопленные события и конфигурацию
-            else if (request.EventType == InternalEventTypeEn.BrowserRequestEventsAndConfig) {
+            else if (request.EventType == InternalEventTypeEn_1.default.BrowserRequestEventsAndConfig) {
                 sendResponse({ collectedEvents: self.CollectedEvents });
                 setTimeout(sendConfigToBrowser, 0);
             }
@@ -986,7 +793,7 @@ class MonitoringBackground {
             tmp.param.start_date = tmp.param.start_date.valueOf();
             tmp.param.end_date = tmp.param.end_date.valueOf();
             self.CollectedEvents.push(tmp);
-            self.browserActionTabIds.forEach((e) => chrome.tabs.sendMessage(e, new BrowserEvent(BrowserEventTypeEn.EventFired, self.CollectedEvents)));
+            self.browserActionTabIds.forEach((e) => chrome.tabs.sendMessage(e, new BrowserEvent_1.default(BrowserEventTypeEn_1.default.EventFired, self.CollectedEvents)));
             // в очередь на отправку
             eventDesc.param = JSON.stringify(param);
             self.AccumulatedEvents.push(eventDesc);
@@ -996,7 +803,7 @@ class MonitoringBackground {
     // Получить данные из login Siebel. Отправка сообщения. Ответ придет потом отдельным сообщением от content script
     //----------------------------------------------------------------------------------------------------------------
     GetSiebelLoginData(tabId) {
-        chrome.tabs.sendMessage(tabId, new ContentScriptMessageGetSiebelLoginData());
+        chrome.tabs.sendMessage(tabId, new ContentScriptMessage_1.ContentScriptMessageGetSiebelLoginData());
     }
     //--------------------------------------------------------------------------------
     // Проверка, нужно ли подключить закладку к мониторингу и, если нужно, подключение

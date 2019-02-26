@@ -1,5 +1,21 @@
 ﻿/// <reference path="MonitoringBackground2.ts" />
-/// <reference path="watchmanCommon.ts" />
+import { siebelLoginTagName, siebelLoginTagAttr } from "./background classes/variables/common"
+import { 
+    ContentScriptMessageSetupDOMMutationListners, 
+    ContentScriptMessageSetupDOMListners, 
+    ContentScriptMessageEval, 
+    ContentScriptMessage, 
+    ContentScriptMessageTypeEn 
+} from "./background classes/ContentScriptMessage"
+import Tab2BackgroundMessage from "./background classes/interfaces/Tab2BackgroundMessage"
+import InternalEventTypeEn from "./background classes/variables/InternalEventTypeEn"
+import SiebelLoginData from "./background classes/interfaces/SiebelLoginData"
+
+import {
+    EventConfigurationDOMEvent, 
+    EventConfigurationDOMMutation
+} from "./MonitoringBackground2";
+
 
 chrome.runtime.onMessage.addListener(
     function (message: ContentScriptMessage, sender: any, sendResponse: (any) => void): void {
@@ -179,7 +195,7 @@ function getSiebelGoginData(siebelLoginTagName: string, siebelLoginTagAttr: stri
 
 
 $(document).ready(function () {
-
+    console.log("watchmanContent. doc.ready()")
     var scr = document.createElement('script');
     scr.text = "(" + getSiebelGoginData + ")('" + siebelLoginTagName + "', '" + siebelLoginTagAttr + "');";
     //scr.src = chrome.extension.getURL("getSiebelLoginData.js");

@@ -1,12 +1,16 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
 /// <reference path="MonitoringBackground2.ts" />
-/// <reference path="watchmanCommon.ts" />
+const common_1 = require("./background classes/variables/common");
+const ContentScriptMessage_1 = require("./background classes/ContentScriptMessage");
+const InternalEventTypeEn_1 = require("./background classes/variables/InternalEventTypeEn");
 chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
     //--------- сообщение получить данные login Siebel. Найти созданный нами элемент, взять оттуда данные и послать отдельным сообщением 
-    if (message.MessageType == ContentScriptMessageTypeEn.GetSiebelLoginData) {
+    if (message.MessageType == ContentScriptMessage_1.ContentScriptMessageTypeEn.GetSiebelLoginData) {
         $(document).ready(function () {
             let rc = null;
             // сначачала пытаемся взять из storage
-            var storage = localStorage[siebelLoginTagAttr];
+            var storage = localStorage[common_1.siebelLoginTagAttr];
             if (storage) {
                 try {
                     rc = JSON.parse(storage);
@@ -16,10 +20,10 @@ chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
                 }
             }
             if (!rc) { // не получилось - берем из нашего HTML-элемента
-                let els = document.getElementsByTagName(siebelLoginTagName);
+                let els = document.getElementsByTagName(common_1.siebelLoginTagName);
                 if (els.length) {
                     let el = els[0];
-                    var data = el.getAttribute(siebelLoginTagAttr);
+                    var data = el.getAttribute(common_1.siebelLoginTagAttr);
                     if (data) {
                         try {
                             rc = JSON.parse(data);
@@ -30,11 +34,11 @@ chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
                     }
                 }
             }
-            chrome.runtime.sendMessage(null, { EventType: InternalEventTypeEn.SiebelLoginData, Param: rc });
+            chrome.runtime.sendMessage(null, { EventType: InternalEventTypeEn_1.default.SiebelLoginData, Param: rc });
         });
     }
     //------------- сообщение Eval - вычислить выражение в контексте страницы
-    else if (message.MessageType == ContentScriptMessageTypeEn.Eval) {
+    else if (message.MessageType == ContentScriptMessage_1.ContentScriptMessageTypeEn.Eval) {
         let rc = { response: null, exception: null };
         // выполнить eval в context
         try {
@@ -57,7 +61,7 @@ chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
         sendResponse(rc);
     }
     //>>>>>>>>>> DOM Event
-    else if (message.MessageType == ContentScriptMessageTypeEn.SetupDOMEventListners) {
+    else if (message.MessageType == ContentScriptMessage_1.ContentScriptMessageTypeEn.SetupDOMEventListners) {
         // повесить обработчики событий
         let msg = message;
         msg.Events.forEach((e) => {
@@ -77,7 +81,7 @@ chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
                     if (evalRC) {
                         let level = 0;
                         chrome.runtime.sendMessage(null, {
-                            EventType: InternalEventTypeEn.DOMEvent, EventSubtype: domEventCfg.DOMEvent,
+                            EventType: InternalEventTypeEn_1.default.DOMEvent, EventSubtype: domEventCfg.DOMEvent,
                             DOMEvent: JSON.parse(JSON.stringify(Object.assign({ EventConfigurationId: eventConfigurationId }, domEvent), function (key, value) {
                                 if (typeof (value) != "string" && level++ > 100)
                                     return "<<replaced>>";
@@ -91,7 +95,7 @@ chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
         });
     }
     //>>>>>>>>>> DOM Mutation
-    else if (message.MessageType == ContentScriptMessageTypeEn.SetupDOMMutationListners) {
+    else if (message.MessageType == ContentScriptMessage_1.ContentScriptMessageTypeEn.SetupDOMMutationListners) {
         // повесить обработчики событий 
         let msg = message;
         var config = { attributes: true, childList: true };
@@ -111,7 +115,7 @@ chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
                             evalRC = true;
                         }
                         if (evalRC) {
-                            chrome.runtime.sendMessage(null, { EventType: InternalEventTypeEn.DOMMutation, EventSubtype: domChangeEventCfg.TargetElementSelector, Exception: exception });
+                            chrome.runtime.sendMessage(null, { EventType: InternalEventTypeEn_1.default.DOMMutation, EventSubtype: domChangeEventCfg.TargetElementSelector, Exception: exception });
                         }
                     }
                 }.f).observe(DOMEl, config);
@@ -170,12 +174,13 @@ function getSiebelGoginData(siebelLoginTagName, siebelLoginTagAttr) {
     ourEl.setAttribute(siebelLoginTagAttr, JSON.stringify(rc)); // в html елемент записать все параметры login
 }
 $(document).ready(function () {
+    console.log("watchmanContent. doc.ready()");
     var scr = document.createElement('script');
-    scr.text = "(" + getSiebelGoginData + ")('" + siebelLoginTagName + "', '" + siebelLoginTagAttr + "');";
+    scr.text = "(" + getSiebelGoginData + ")('" + common_1.siebelLoginTagName + "', '" + common_1.siebelLoginTagAttr + "');";
     //scr.src = chrome.extension.getURL("getSiebelLoginData.js");
     document.body.appendChild(scr);
     // Получилось ли с login, мы не знаем, но попробуем взять из кеша
-    var loginData = localStorage[siebelLoginTagName];
+    var loginData = localStorage[common_1.siebelLoginTagName];
     if (loginData) {
         try {
             loginData = JSON.parse(loginData);
@@ -184,7 +189,7 @@ $(document).ready(function () {
             loginData = null;
         }
     }
-    chrome.runtime.sendMessage(null, { EventType: InternalEventTypeEn.ClientDOMReady, Param: loginData });
+    chrome.runtime.sendMessage(null, { EventType: InternalEventTypeEn_1.default.ClientDOMReady, Param: loginData });
     return;
 });
 //# sourceMappingURL=watchmanContent.js.map
